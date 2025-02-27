@@ -1,0 +1,130 @@
+from flask import Flask, render_template, request, redirect, url_for, send_file
+import sqlite3
+import pandas as pd
+from fpdf import FPDF
+import os
+
+app = Flask(__name__)
+DB_FILE = "database.db"
+
+# Datenbank initialisieren
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vehicles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            brand TEXT,
+            model TEXT,
+            year INTEGER,
+            mileage INTEGER,
+            purchase_price REAL,
+            selling_price REAL,
+            status TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT,
+            amount REAL,
+            description TEXT,
+            date TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            phone TEXT,
+            email TEXT,
+            address TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+@app.route('/')
+def index():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM vehicles")
+    vehicles = cursor.fetchall()
+    cursor.execute("SELECT * FROM transactions")
+    transactions = cursor.fetchall()
+    cursor.execute("SELECT * FROM customers")
+    customers = cursor.fetchall()
+    conn.close()
+    return render_template("index.html", vehicles=vehicles, transactions=transactions, customers=customers)
+
+@app.route('/add_vehicle', methods=['POST'])
+def add_vehicle():
+    brand = request.form['brand']
+    model = request.form['model']
+    year = request.form['year']
+    mileage = request.form['mileage']
+    purchase_price = request.form['purchase_price']
+    selling_price = request.form['selling_price']
+    status = request.form['status']
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO vehicles (brand, model, year, mileage, purchase_price, selling_price, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                   (brand, model, year, mileage, purchase_price, selling_price, status))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('index'))
+
+@app.route('/add_transaction', methods=['POST'])
+def add_transaction():
+    type = request.form['type']
+    amount = request.form['amount']
+    description = request.form['description']
+    date = request.form['date']
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO transactions (type, amount, description, date) VALUES (?, ?, ?, ?)",
+                   (type, amount, description, date))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('index'))
+
+@app.route('/add_customer', methods=['POST'])
+def add_customer():
+    name = request.form['name']
+    phone = request.form['phone']
+    email = request.form['email']
+    address = request.form['address']
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO customers (name, phone, email, address) VALUES (?, ?, ?, ?)",
+                   (name, phone, email, address))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('index'))
+
+@app.route('/generate_report')
+def generate_report():
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("SELECT * FROM transactions", conn)
+    conn.close()
+    
+    report_file = "report.pdf"
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Finanzbericht", ln=True, align='C')
+    pdf.ln(10)
+    
+    for _, row in df.iterrows():
+        pdf.cell(200, 10, txt=f"{row['date']} - {row['type']} - {row['amount']}€ - {row['description']}", ln=True)
+    
+    pdf.output(report_file)
+    return send_file(report_file, as_attachment=True)
+
+if __name__ == '__main__':
+    app.run(debug=True)
